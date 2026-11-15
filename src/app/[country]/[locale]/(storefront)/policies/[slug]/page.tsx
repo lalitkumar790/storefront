@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
+import { Suspense } from "react";
 import { getTranslations } from "next-intl/server";
-import { getPolicy } from "@/lib/data/policies";
+import { cachedGetPolicy, getPolicy } from "@/lib/data/policies";
+import { getStore } from "@/lib/data/store";
+import {
+  buildLocalizedAlternates,
+  translationFingerprint,
+} from "@/lib/metadata/alternates";
+import { getStoreUrl } from "@/lib/store";
 
 interface PolicyPageProps {
   params: Promise<{
@@ -11,12 +19,72 @@ interface PolicyPageProps {
   }>;
 }
 
-// Preview-only fallback: avoid uncached policy API requests during
-// Next.js Cache Components metadata prerendering.
-export const metadata: Metadata = {
-  title: "Store Policies",
-  description: "Store policies and information.",
-};
+export async function generateMetadata({
+  params,
+}: PolicyPageProps): Promise<Metadata> {
+  const { country, locale, slug } = await params;
+  const [policy, store] = await Promise.all([
+    getPolicy(slug, { country, locale }),
+    getStore(locale),
+  ]);
+
+  if (!policy) {
+    const t = await getTranslations({
+      locale: locale as Locale,
+      namespace: "policies",
+    });
+    return {
+      title: t("policyNotFound"),
+      description: t("noContent"),
+    };
+  }
+
+  const description = `${policy.name} — ${store.name}`;
+  const storeUrl = getStoreUrl();
+  const localizedAlternates = storeUrl
+    ? await buildLocalizedAlternates({
+        storeUrl,
+        country,
+        locale,
+        path: `/policies/${policy.slug}`,
+        currentResourceFingerprint: policyTranslationFingerprint(policy),
+        resolvePath: async (target) => {
+          const localizedPolicy = await cachedGetPolicy(policy.id, target);
+          return localizedPolicy
+            ? {
+                path: `/policies/${localizedPolicy.slug}`,
+                fingerprint: policyTranslationFingerprint(localizedPolicy),
+              }
+            : undefined;
+        },
+      })
+    : undefined;
+
+  return {
+    title: policy.name,
+    description,
+    ...(localizedAlternates
+      ? {
+          alternates: {
+            canonical: localizedAlternates.canonical,
+            languages: localizedAlternates.languages,
+          },
+        }
+      : {}),
+    openGraph: {
+      title: policy.name,
+      description,
+      ...(localizedAlternates ? { url: localizedAlternates.canonical } : {}),
+    },
+  };
+}
+
+// Rendering a request-time marker keeps policy metadata dynamic during
+// Cache Components prerendering without removing its localized SEO metadata.
+async function PolicyMetadataMarker() {
+  await connection();
+  return null;
+}
 
 export default async function PolicyPage({
   params,
@@ -33,6 +101,9 @@ export default async function PolicyPage({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <Suspense fallback={null}>
+        <PolicyMetadataMarker />
+      </Suspense>
       <h1 className="text-3xl font-bold text-gray-900 mb-8">{policy.name}</h1>
       {policy.body_html ? (
         <div
@@ -50,3 +121,16 @@ export default async function PolicyPage({
   );
 }
 
+function policyTranslationFingerprint(policy: {
+  name: string;
+  slug: string;
+  body: string | null;
+  body_html: string | null;
+}): string {
+  return translationFingerprint(
+    policy.name,
+    policy.slug,
+    policy.body,
+    policy.body_html,
+  );
+}
