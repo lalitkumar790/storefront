@@ -63,11 +63,13 @@ async function redirectToLocalizedRoute(
  * params. Prebuild only the configured default route so every nested page is
  * not multiplied by the full Market list. Other valid routes render on demand.
  */
-// Preview-only: defer market routes to request time. The Spree sandbox
-// resolves markets dynamically, so prebuilding a default country/locale
-// route causes dynamic metadata to block Next.js static prerendering.
 export function generateStaticParams() {
-  return [];
+  return [
+    {
+      country: getDefaultCountry(),
+      locale: resolveSupportedLocale(getDefaultLocale()) ?? DEFAULT_LOCALE,
+    },
+  ];
 }
 
 export const viewport: Viewport = storeViewport;
