@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { connection } from "next/server";
+import { Suspense } from "react";
 import { getTranslations } from "next-intl/server";
 import { CollectionCard } from "@/components/collections/CollectionCard";
 import { getCollections } from "@/lib/data/collections";
@@ -8,6 +10,13 @@ import { buildCanonicalUrl } from "@/lib/seo";
 import { getStoreUrl } from "@/lib/store";
 
 const PAGE_SIZE = 24;
+
+// This route has request-dependent metadata (page/searchParams and market hreflangs).
+// Signal intentional dynamic metadata while keeping the collection list prerenderable.
+async function DynamicMetadataMarker() {
+  await connection();
+  return null;
+}
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -99,6 +108,9 @@ export default async function CollectionsPage({
 
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <Suspense fallback={null}>
+        <DynamicMetadataMarker />
+      </Suspense>
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">{t("title")}</h1>
         <p className="mt-2 text-gray-500">{t("subtitle")}</p>
