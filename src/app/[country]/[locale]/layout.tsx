@@ -2,6 +2,7 @@ import type { Market } from "@spree/sdk";
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { connection } from "next/server";
 import { NextIntlClientProvider } from "next-intl";
 import { Suspense } from "react";
 import "../../globals.css";
@@ -72,6 +73,13 @@ export function generateStaticParams() {
   ];
 }
 
+// Preview-only: country/locale storefront metadata includes request-bound
+// market data. Make that dynamism explicit for child routes under this layout.
+async function StorefrontDynamicMarker() {
+  await connection();
+  return null;
+}
+
 export const viewport: Viewport = storeViewport;
 
 export async function generateMetadata({
@@ -130,6 +138,9 @@ export async function CountryLocaleLayoutContent({
           storeName={store.name}
         >
           {children}
+          <Suspense fallback={null}>
+            <StorefrontDynamicMarker />
+          </Suspense>
         </CountryLocaleProviders>
       </DocumentShell>
     );
